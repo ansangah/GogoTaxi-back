@@ -1,17 +1,32 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // .env 파일의 값을 사용
 }
 
+// 1. users 테이블 설계
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
+  id        String    @id @default(uuid()) // PK, 문자열 ID
   name      String
-  gender    String?
-  createdAt DateTime @default(now())
+  userid    String    @unique // 로그인 ID (중복 불가)
+  password  String    // 해시된 비밀번호
+  gender    String?   // ?는 Null 가능
+  phone     String?
+  birthDate DateTime? // Date 대신 DateTime 사용 (Prisma/Postgres 호환성)
+  smsConsent Boolean   @default(false)
+  termsConsent Boolean   @default(true)
+  paymentPassword String?
+  createdAt DateTime  @default(now())
+
+  // 1:N 관계 (나중에 추가할 테이블들)
+  // createdRooms Room[]
+  // participations RoomParticipant[]
+  // reviews Review[]
+  // reports Report[]
+  // paymentMethods PaymentMethod[]
 }
