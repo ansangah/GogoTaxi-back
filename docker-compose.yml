@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: gogo_postgres_5433
+    environment:
+      POSTGRES_USER: gogo
+      POSTGRES_PASSWORD: gogo_pw
+      POSTGRES_DB: gogo_db
+      # 개발 편의용 (로컬만): 비번 없이도 붙게 하려면 아래 줄 활성화 가능
+      # POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data_5433:/var/lib/postgresql/data
+volumes:
+  db_data_5433:
