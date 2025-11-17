@@ -1,7 +1,6 @@
 {
   "name": "gogotaxi-back",
   "version": "1.0.0",
-  "type": "module", 
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -15,6 +14,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^6.19.0",
+    "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
