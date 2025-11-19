@@ -1,13 +1,13 @@
 @BASE = http://localhost:8080
-@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk0c2luMDgwMDA0MHltODltNjF3aTFkIiwiZW1haWwiOiJtaW5nQGV4YW1wbGUuY29tIiwiaWF0IjoxNzYzNDg2MTg5LCJleHAiOjE3NjQwOTA5ODl9.UpDlKOsdk0j7wt2hqn5LkK1Ll0XPQtRaiY5zSmBYXZA
+@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk2NzhocnMwMDA4MHlvNGM3MHN4bTB0IiwiZW1haWwiOiJ6YWltQGV4YW1wbGUuY29tIiwiaWF0IjoxNzYzNTY4NzQxLCJleHAiOjE3NjQxNzM1NDF9.fYiLjKjRfPREGUPFRMmCPD1eqdNsppSymn_I0oLs_ag
 
 ### 회원가입
 POST http://localhost:8080/api/auth/signup
 Content-Type: application/json
 
 {
-  "email": "ming@example.com",
-  "password": "saim0807!",
+  "email": "zaim@example.com",
+  "password": "zaim0807!",
   "nickname": "사임"
 }
 
@@ -16,8 +16,8 @@ POST http://localhost:8080/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "ming@example.com",
-  "password": "saim0807!"
+  "email": "zaim@example.com",
+  "password": "zaim0807!"
 }
 
 ### 회원가입
@@ -114,7 +114,7 @@ Content-Type: application/json
 ### ⚠ 방 생성 후, 응답 JSON에서 "id" 값을 복사해서
 ###    아래 @ROOM_ID 자리에 넣어줘야 해
 
-@ROOM_ID = cmi4u08fm000n0y2khtmqxnpw 
+@ROOM_ID = cmi67ebss000m0yo4hk22umph
 
 
 ### 2. 방 목록 조회 (전체)
@@ -122,7 +122,7 @@ GET {{BASE}}/api/rooms
 Authorization: Bearer {{JWT}}
 
 ### 3. 방 검색 (출발지 필터 + 자리 남은 방만)
-GET {{BASE}}/api/rooms?departureLabel=전북대&hasSeat=true
+GET {{BASE}}/api/rooms?departureLabel=강남역&hasSeat=true
 Authorization: Bearer {{JWT}}
 
 ### 4. 방 상세 조회
@@ -135,7 +135,7 @@ Authorization: Bearer {{JWT}}
 Content-Type: application/json
 
 {
-  "title": "전북대 → 시외버스터미널 (시간 변경)",
+  "title": "전북대 → 고속버스터미널",
   "departureTime": "2025-11-20T16:00:00.000Z",
   "estimatedFare": 13000
 }
@@ -174,3 +174,25 @@ Authorization: Bearer {{JWT}}
 ### 10. 매칭 테스트 - 시간 조건 포함 (오늘 ~ 내일)
 GET {{BASE}}/api/rooms/match?departureLat=35.8461&departureLng=127.1291&radiusKm=3&seatsNeeded=1&earliest=2025-11-20T00:00:00.000Z&latest=2025-11-21T00:00:00.000Z
 Authorization: Bearer {{JWT}}
+
+########################################################
+### 방 정렬(sortBy) 테스트
+########################################################
+
+### 11. 정렬 - 출발지 가까운 순
+### - refLat/refLng에 현재 위치(또는 희망 출발지) 위도/경도 입력
+GET {{BASE}}/api/rooms?sortBy=departureDistance&refLat=35.1796&refLng=129.0756
+Authorization: Bearer {{JWT}}
+
+### 12. 정렬 - 도착지 가까운 순
+GET {{BASE}}/api/rooms?sortBy=arrivalDistance&refLat=35.1796&refLng=129.0756
+Authorization: Bearer {{JWT}}
+
+### 13. 정렬 - 출발 시간 가까운 순
+GET {{BASE}}/api/rooms?sortBy=time
+Authorization: Bearer {{JWT}}
+
+### 나의 방
+GET {{BASE}}/api/rooms/{{ROOM_ID}}
+Authorization: Bearer {{JWT}}
+

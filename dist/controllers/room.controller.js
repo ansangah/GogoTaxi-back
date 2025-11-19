@@ -29,12 +29,28 @@ const createRoomSchema = zod_1.z.object({
     estimatedFare: zod_1.z.coerce.number().int().positive().optional(),
     estimatedEta: isoDateField.optional()
 });
-const listRoomsSchema = zod_1.z.object({
+const listRoomsSchema = zod_1.z
+    .object({
     status: zod_1.z.nativeEnum(client_1.RoomStatus).optional(),
     priority: zod_1.z.nativeEnum(client_1.RoomPriority).optional(),
     creatorId: zod_1.z.string().cuid().optional(),
+    departureLabel: zod_1.z.string().min(1).optional(),
+    hasSeat: zod_1.z.coerce.boolean().optional(),
+    mine: zod_1.z.coerce.boolean().optional(),
+    sortBy: zod_1.z.enum(['default', 'departureDistance', 'arrivalDistance', 'time']).optional(),
+    refLat: decimalField.optional(),
+    refLng: decimalField.optional(),
     take: zod_1.z.coerce.number().int().min(1).max(50).optional(),
     cursor: zod_1.z.string().cuid().optional()
+})
+    .refine(data => {
+    if (!data.sortBy || data.sortBy === 'default' || data.sortBy === 'time') {
+        return true;
+    }
+    return data.refLat !== undefined && data.refLng !== undefined;
+}, {
+    message: 'Reference coordinates are required for distance sort',
+    path: ['refLat']
 });
 const roomParamSchema = zod_1.z.object({
     id: zod_1.z.string().cuid()
@@ -66,7 +82,14 @@ const defaultRoomInclude = {
             id: true,
             userId: true,
             seatNumber: true,
-            joinedAt: true
+            joinedAt: true,
+            user: {
+                select: {
+                    id: true,
+                    email: true,
+                    nickname: true
+                }
+            }
         }
     },
     creator: {
@@ -77,6 +100,11 @@ const defaultRoomInclude = {
         }
     }
 };
+const ROOM_STATUS_PROGRESS = {
+    [client_1.RoomStatus.open]: { stage: 'recruiting', label: '모집 중' },
+    [client_1.RoomStatus.full]: { stage: 'ready', label: '모집 완료' },
+    [client_1.RoomStatus.closed]: { stage: 'closed', label: '마감' }
+};
 function respondValidationError(res, error) {
     return res.status(400).json({
         message: 'Validation failed',
@@ -84,8 +112,11 @@ function respondValidationError(res, error) {
     });
 }
 const toDecimal = (value) => new client_1.Prisma.Decimal(value);
-function serializeRoom(room) {
-    return {
+function serializeRoom(room, viewerId) {
+    const progress = ROOM_STATUS_PROGRESS[room.status];
+    const filledSeats = room.participants.length;
+    const seatsAvailable = Math.max(room.capacity - filledSeats, 0);
+    const serialized = {
         ...room,
         departureLat: room.departureLat.toNumber(),
         departureLng: room.departureLng.toNumber(),
@@ -96,7 +127,19 @@ function serializeRoom(room) {
         departureTime: room.departureTime.toISOString(),
         createdAt: room.createdAt.toISOString(),
         participants: room.participants,
-        creator: room.creator
+        creator: room.creator,
+        seats: seatsAvailable,
+        filled: filledSeats,
+        dispatchStage: progress.stage,
+        dispatchStageLabel: progress.label
+    };
+    if (!viewerId) {
+        return serialized;
+    }
+    const seatNumber = room.participants.find(participant => participant.userId === viewerId)?.seatNumber ?? null;
+    return {
+        ...serialized,
+        mySeatNumber: seatNumber
     };
 }
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -174,7 +217,7 @@ async function createRoom(req, res) {
         });
         await refreshRoomStatus(room.id);
         const updated = await loadRoomOrThrow(room.id);
-        return res.status(201).json({ room: serializeRoom(updated) });
+        return res.status(201).json({ room: serializeRoom(updated, userId) });
     }
     catch (error) {
         console.error('createRoom error', error);
@@ -187,21 +230,68 @@ async function listRooms(req, res) {
     if (!parsed.success) {
         return respondValidationError(res, parsed.error);
     }
-    const { status, priority, creatorId, take = 20, cursor } = parsed.data;
+    const { status, priority, creatorId, departureLabel, hasSeat, mine, sortBy = 'default', refLat, refLng, take = 20, cursor } = parsed.data;
+    const userId = req.user?.sub;
+    const includeMine = mine ?? (!!creatorId && userId === creatorId);
+    const where = {
+        ...(priority ? { priority } : {}),
+        ...(!includeMine && creatorId ? { creatorId } : {}),
+        ...(departureLabel
+            ? {
+                departureLabel: {
+                    contains: departureLabel,
+                    mode: 'insensitive'
+                }
+            }
+            : {})
+    };
+    const effectiveStatus = status ?? (hasSeat ? client_1.RoomStatus.open : undefined);
+    if (effectiveStatus) {
+        where.status = effectiveStatus;
+    }
+    if (includeMine) {
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        where.OR = [
+            { creatorId: userId },
+            {
+                participants: {
+                    some: {
+                        userId
+                    }
+                }
+            }
+        ];
+    }
     try {
         const rooms = await prisma_1.prisma.room.findMany({
-            where: {
-                status,
-                priority,
-                ...(creatorId ? { creatorId } : {})
-            },
+            where,
             include: defaultRoomInclude,
             orderBy: { departureTime: 'asc' },
             take,
             ...(cursor ? { skip: 1, cursor: { id: cursor } } : {})
         });
+        let sortedRooms = rooms;
+        if (sortBy === 'departureDistance' && refLat !== undefined && refLng !== undefined) {
+            sortedRooms = [...rooms].sort((a, b) => {
+                const distA = haversineKm(refLat, refLng, a.departureLat.toNumber(), a.departureLng.toNumber());
+                const distB = haversineKm(refLat, refLng, b.departureLat.toNumber(), b.departureLng.toNumber());
+                return distA - distB;
+            });
+        }
+        else if (sortBy === 'arrivalDistance' && refLat !== undefined && refLng !== undefined) {
+            sortedRooms = [...rooms].sort((a, b) => {
+                const distA = haversineKm(refLat, refLng, a.arrivalLat.toNumber(), a.arrivalLng.toNumber());
+                const distB = haversineKm(refLat, refLng, b.arrivalLat.toNumber(), b.arrivalLng.toNumber());
+                return distA - distB;
+            });
+        }
+        else if (sortBy === 'time') {
+            sortedRooms = [...rooms].sort((a, b) => a.departureTime.getTime() - b.departureTime.getTime());
+        }
         return res.json({
-            rooms: rooms.map(serializeRoom)
+            rooms: sortedRooms.map(room => serializeRoom(room, userId))
         });
     }
     catch (error) {
@@ -214,6 +304,7 @@ async function matchRooms(req, res) {
     if (!parsed.success) {
         return respondValidationError(res, parsed.error);
     }
+    const userId = req.user?.sub;
     const { departureLat, departureLng, radiusKm = 3, earliest, latest, seatsNeeded = 1, priority } = parsed.data;
     const where = {
         status: client_1.RoomStatus.open
@@ -257,7 +348,7 @@ async function matchRooms(req, res) {
             }
             return true;
         });
-        return res.json({ rooms: filtered.map(serializeRoom) });
+        return res.json({ rooms: filtered.map(room => serializeRoom(room, userId)) });
     }
     catch (error) {
         console.error('matchRooms error', error);
@@ -270,6 +361,7 @@ async function getRoomDetail(req, res) {
     if (!parsed.success) {
         return respondValidationError(res, parsed.error);
     }
+    const userId = req.user?.sub;
     try {
         const room = await prisma_1.prisma.room.findUnique({
             where: { id: parsed.data.id },
@@ -278,7 +370,7 @@ async function getRoomDetail(req, res) {
         if (!room) {
             return res.status(404).json({ message: 'Room not found' });
         }
-        return res.json({ room: serializeRoom(room) });
+        return res.json({ room: serializeRoom(room, userId) });
     }
     catch (error) {
         console.error('getRoomDetail error', error);
@@ -343,7 +435,7 @@ async function updateRoom(req, res) {
             data,
             include: defaultRoomInclude
         });
-        return res.json({ room: serializeRoom(updated) });
+        return res.json({ room: serializeRoom(updated, userId) });
     }
     catch (error) {
         console.error('updateRoom error', error);
@@ -378,7 +470,7 @@ async function closeRoom(req, res) {
             data: { status: client_1.RoomStatus.closed },
             include: defaultRoomInclude
         });
-        return res.json({ room: serializeRoom(updated) });
+        return res.json({ room: serializeRoom(updated, userId) });
     }
     catch (error) {
         console.error('closeRoom error', error);
@@ -431,7 +523,7 @@ async function joinRoom(req, res) {
         });
         await refreshRoomStatus(room.id);
         const updated = await loadRoomOrThrow(room.id);
-        return res.status(201).json({ room: serializeRoom(updated) });
+        return res.status(201).json({ room: serializeRoom(updated, userId) });
     }
     catch (error) {
         console.error('joinRoom error', error);
@@ -452,6 +544,20 @@ async function leaveRoom(req, res) {
         return res.status(401).json({ message: 'Unauthorized' });
     }
     try {
+        const room = await prisma_1.prisma.room.findUnique({
+            where: { id: param.data.id },
+            select: {
+                id: true,
+                creatorId: true,
+                status: true
+            }
+        });
+        if (!room) {
+            return res.status(404).json({ message: 'Room not found' });
+        }
+        if (room.creatorId === userId) {
+            return res.status(403).json({ message: 'Host cannot leave their own room' });
+        }
         const participant = await prisma_1.prisma.roomParticipant.findFirst({
             where: { roomId: param.data.id, userId }
         });
@@ -459,19 +565,12 @@ async function leaveRoom(req, res) {
             return res.status(404).json({ message: 'Not participating in this room' });
         }
         await prisma_1.prisma.roomParticipant.delete({ where: { id: participant.id } });
-        const room = await prisma_1.prisma.room.findUnique({
+        await refreshRoomStatus(param.data.id);
+        const updated = await prisma_1.prisma.room.findUnique({
             where: { id: param.data.id },
-            include: {
-                participants: true,
-                creator: true
-            }
+            include: defaultRoomInclude
         });
-        if (!room) {
-            return res.status(404).json({ message: 'Room not found' });
-        }
-        await refreshRoomStatus(room.id);
-        const updated = await loadRoomOrThrow(room.id);
-        return res.json({ room: serializeRoom(updated) });
+        return res.json({ room: updated ? serializeRoom(updated, userId) : null });
     }
     catch (error) {
         console.error('leaveRoom error', error);
