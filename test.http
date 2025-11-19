@@ -1,18 +1,22 @@
 @BASE = http://localhost:8080
-@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWh2anlpdTQwMDAwbmdrMzBmaGh6NGJkIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImlhdCI6MTc2MjkyNDk5MCwiZXhwIjoxNzYzNTI5NzkwfQ.vpHzKeiE5fYDhkdajXP2sBE5HBcYXBONsCkk946GAfE
+@ACCESS = paste_access_token_here
+@REFRESH = paste_refresh_token_here
+
+### 헬스 체크
+GET {{BASE}}/health
 
 ### 회원가입
-POST http://localhost:8080/api/auth/signup
+POST {{BASE}}/api/auth/signup
 Content-Type: application/json
 
 {
-  "email": "yeeuneey@example.com",
-  "password": "12345678",
-  "nickname": "예은"
+  "email": "alice@example.com",
+  "password": "Passw0rd!",
+  "nickname": "앨리스"
 }
 
 ### 로그인
-POST http://localhost:8080/api/auth/login
+POST {{BASE}}/api/auth/login
 Content-Type: application/json
 
 {
@@ -20,49 +24,22 @@ Content-Type: application/json
   "password": "Passw0rd!"
 }
 
-### 내 정보 조회
-GET http://localhost:8080/api/me
-Authorization: Bearer {{JWT}}
+### 액세스 토큰으로 내 정보 조회
+GET {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
 
-### 실제 회원가입
-POST http://34.207.148.130:8080/api/auth/signup
+### 리프레시 토큰으로 재발급
+POST {{BASE}}/api/auth/refresh
 Content-Type: application/json
 
 {
-  "email": "ahnneu@example.com",
-  "password": "ahnneu1234",
-  "nickname": "안느"
+  "refreshToken": "{{REFRESH}}"
 }
 
-### 실제 로그인
-POST http://34.207.148.130:8080/api/auth/login
+### 리프레시 토큰으로 로그아웃(폐기)
+POST {{BASE}}/api/auth/logout
 Content-Type: application/json
 
 {
-  "email": "ahnneu@example.com",
-  "password": "ahnneu1234"
-}
-
-### 토큰 테스트
-GET http://34.207.148.130:8080/api/me
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWh4OTBpbWEwMDAwcGgxb21rMDQwbzg3IiwiZW1haWwiOiJhaG5uZXVAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjMwMjc1NjksImV4cCI6MTc2MzYzMjM2OX0.-RdxZDVn8qHt43zv5M__XbvUaepl7gN29xMKhJNHCBk
-
-### 실제 회원가입
-POST http://34.207.148.130:8080/api/auth/signup
-Content-Type: application/json
-
-{
-  "email": "yeye@example.com",
-  "password": "yeye1234",
-  "nickname": "예예"
-}
-
-### 실제 회원가입
-POST http://localhost:8080/api/auth/signup
-Content-Type: application/json
-
-{
-  "email": "ahnneu@naver.com",
-  "password": "tkddk128!!",
-  "nickname": "안느"
+  "refreshToken": "{{REFRESH}}"
 }
