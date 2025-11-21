@@ -8,48 +8,56 @@ datasource db {
 }
 
 model User {
-  id                  String   @id @default(cuid())
-  name                String
-  email               String?  @unique
-  nickname            String?
-  passwordHash        String?  @map("password_hash") // 소셜 로그인 시 null
-  gender              Gender?
-  phone               String?
-  birthDate           DateTime? @map("birth_date")
-  smsConsent          Boolean   @default(false) @map("sms_consent")
-  termsConsent        Boolean   @default(false) @map("terms_consent")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt
+  id            String   @id @default(cuid())
+  name          String   @default("")
+  email         String?  @unique
+  nickname      String?
+  passwordHash  String?  @map("password_hash") // 소셜 로그인 시 null
+  gender        Gender?
+  phone         String?
+  birthDate     DateTime? @map("birth_date")
+  smsConsent    Boolean   @default(false) @map("sms_consent")
+  termsConsent  Boolean   @default(false) @map("terms_consent")
+  walletBalance Int       @default(0) @map("wallet_balance")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt
 
   roomsCreated     Room[]             @relation("RoomCreator")
   roomParticipants RoomParticipant[]
   reviews          Review[]           @relation("UserReviews")
   reports          Report[]           @relation("UserReports")
+  walletTxs        WalletTransaction[]
+  settlements      RoomSettlement[]
 }
 
 model Room {
-  id             String      @id @default(cuid())
-  title          String
-  creatorId      String      @map("creator_id")
-  creator        User        @relation("RoomCreator", fields: [creatorId], references: [id])
-  departureLabel String      @map("departure_label")
-  departureLat   Decimal     @db.Decimal(10, 6) @map("departure_lat")
-  departureLng   Decimal     @db.Decimal(10, 6) @map("departure_lng")
-  arrivalLabel   String      @map("arrival_label")
-  arrivalLat     Decimal     @db.Decimal(10, 6) @map("arrival_lat")
-  arrivalLng     Decimal     @db.Decimal(10, 6) @map("arrival_lng")
-  departureTime  DateTime    @map("departure_time")
-  capacity       Int
-  priority       RoomPriority
-  status         RoomStatus  @default(recruiting)
-  estimatedFare  Int?        @map("estimated_fare")
-  estimatedEta   DateTime?   @map("estimated_eta")
-  createdAt      DateTime    @default(now()) @map("created_at")
+  id               String           @id @default(cuid())
+  title            String
+  creatorId        String           @map("creator_id")
+  creator          User             @relation("RoomCreator", fields: [creatorId], references: [id])
+  departureLabel   String           @map("departure_label")
+  departureLat     Decimal          @db.Decimal(10, 6) @map("departure_lat")
+  departureLng     Decimal          @db.Decimal(10, 6) @map("departure_lng")
+  arrivalLabel     String           @map("arrival_label")
+  arrivalLat       Decimal          @db.Decimal(10, 6) @map("arrival_lat")
+  arrivalLng       Decimal          @db.Decimal(10, 6) @map("arrival_lng")
+  departureTime    DateTime         @map("departure_time")
+  capacity         Int
+  priority         RoomPriority
+  status           RoomStatus       @default(recruiting)
+  estimatedFare    Int?             @map("estimated_fare")
+  actualFare       Int?             @map("actual_fare")
+  estimatedEta     DateTime?        @map("estimated_eta")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  settlementStatus SettlementStatus @default(pending) @map("settlement_status")
+  noShowUserIds    String[]         @default([]) @map("no_show_user_ids")
 
   participants   RoomParticipant[]
   dispatchedTaxi DispatchedTaxi?
   reviews        Review[]
   reports        Report[]
+  settlements    RoomSettlement[]
+  walletTxs      WalletTransaction[]
 }
 
 model RoomParticipant {
@@ -65,6 +73,40 @@ model RoomParticipant {
   @@unique([roomId, userId])
 }
 
+model WalletTransaction {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  user           User           @relation(fields: [userId], references: [id])
+  roomId         String?        @map("room_id")
+  room           Room?          @relation(fields: [roomId], references: [id])
+  idempotencyKey String?        @unique @map("idempotency_key")
+  kind           WalletTxKind
+  amount         Int
+  currency       String         @default("KRW")
+  status         WalletTxStatus @default(success)
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+}
+
+model RoomSettlement {
+  id           String                 @id @default(cuid())
+  roomId       String                 @map("room_id")
+  room         Room                   @relation(fields: [roomId], references: [id])
+  userId       String                 @map("user_id")
+  user         User                   @relation(fields: [userId], references: [id])
+  role         SettlementRole
+  deposit      Int                    @default(0)
+  extraCollect Int                    @default(0) @map("extra_collect")
+  refund       Int                    @default(0)
+  netAmount    Int                    @default(0) @map("net_amount") // +징수, -환급
+  noShow       Boolean                @default(false) @map("no_show")
+  note         String?
+  status       SettlementRecordStatus @default(pending)
+  createdAt    DateTime               @default(now()) @map("created_at")
+
+  @@unique([roomId, userId])
+}
+
 model Review {
   id             Int      @id @default(autoincrement())
   roomId         String   @map("room_id")
@@ -73,7 +115,7 @@ model Review {
   comment        String?  @db.Text
   createdAt      DateTime @default(now()) @map("created_at")
 
-  room    Room @relation(fields: [roomId], references: [id])
+  room     Room @relation(fields: [roomId], references: [id])
   reviewer User @relation("UserReviews", fields: [reviewerUserId], references: [id])
 }
 
@@ -90,11 +132,11 @@ model Report {
 }
 
 model DispatchedTaxi {
-  id         Int     @id @default(autoincrement())
-  roomId     String  @unique @map("room_id")
-  driverName String  @map("driver_name")
-  carModel   String  @map("car_model")
-  carNumber  String  @map("car_number")
+  id         Int    @id @default(autoincrement())
+  roomId     String @unique @map("room_id")
+  driverName String @map("driver_name")
+  carModel   String @map("car_model")
+  carNumber  String @map("car_number")
 
   room Room @relation(fields: [roomId], references: [id])
 }
@@ -118,15 +160,56 @@ enum RoomPriority {
   seats
 }
 
+// 두 버전의 상태값을 모두 포함해서 합침
 enum RoomStatus {
+  open
+  full
+  closed
   recruiting
   dispatching
   success
   failed
 }
 
+enum SettlementStatus {
+  pending
+  deposit_collected
+  host_paid
+  settling
+  settled
+}
+
+enum WalletTxKind {
+  top_up
+  auto_top_up
+  hold_deposit
+  host_charge
+  extra_collect
+  refund
+  host_refund
+  adjustment
+}
+
+enum WalletTxStatus {
+  pending
+  success
+  failed
+}
+
+enum SettlementRole {
+  host
+  guest
+}
+
 enum NoticeType {
   update
   info
   maintenance
+}
+
+enum SettlementRecordStatus {
+  pending
+  settling
+  settled
+  failed
 }

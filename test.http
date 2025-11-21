@@ -1,68 +1,91 @@
 @BASE = http://localhost:8080
-@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWh2anlpdTQwMDAwbmdrMzBmaGh6NGJkIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImlhdCI6MTc2MjkyNDk5MCwiZXhwIjoxNzYzNTI5NzkwfQ.vpHzKeiE5fYDhkdajXP2sBE5HBcYXBONsCkk946GAfE
+# 로그인 후 받은 JWT 토큰으로 교체하세요
+@TOKEN = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk4aXVoZjcwMDAwbmdrajd5dWM2M3o5IiwiZW1haWwiOiJ0ZXN0ZXJAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjM3MDkwNzYsImV4cCI6MTc2NDMxMzg3Nn0.oQuczq4fZpel_bynp89LyU3XGY63eAp-vwpJsKamtdw
+# Prisma Studio 등에서 확인한 Room ID 로 교체하세요
+@ROOM_ID = <room_cuid_here>
 
-### 회원가입
-POST http://localhost:8080/api/auth/signup
+### 회원가입 (로컬)
+POST {{BASE}}/api/auth/signup
 Content-Type: application/json
 
 {
-  "email": "alice@example.com",
+  "email": "tester@example.com",
   "password": "Passw0rd!",
-  "nickname": "상아"
+  "nickname": "테스터"
 }
 
-### 로그인
-POST http://localhost:8080/api/auth/login
+### 로그인 (로컬)
+POST {{BASE}}/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "alice@example.com",
+  "email": "tester@example.com",
   "password": "Passw0rd!"
 }
 
-### 내 정보 조회
-GET http://localhost:8080/api/me
-Authorization: Bearer {{JWT}}
+### 내 정보 확인
+GET {{BASE}}/api/me
+Authorization: Bearer {{TOKEN}}
 
-### 실제 회원가입
-POST http://34.207.148.130:8080/api/auth/signup
+### 지갑 잔액 조회
+GET {{BASE}}/api/wallet/balance
+Authorization: Bearer {{TOKEN}}
+
+### 지갑 충전 (topup)
+POST {{BASE}}/api/wallet/topup
 Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
 
 {
-  "email": "ahnneu@example.com",
-  "password": "ahnneu1234",
-  "nickname": "안느"
+  "amount": 50000
 }
 
-### 실제 로그인
-POST http://34.207.148.130:8080/api/auth/login
+### 방 배차 시 예치금 홀드 (1/n)
+POST {{BASE}}/api/settlements/rooms/{{ROOM_ID}}/hold
+Authorization: Bearer {{TOKEN}}
+
+### 하차 시 최종 정산 (실요금 입력)
+POST {{BASE}}/api/settlements/rooms/{{ROOM_ID}}/finalize
 Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
 
 {
-  "email": "ahnneu@example.com",
-  "password": "ahnneu1234"
+  "actualFare": 62000
 }
 
-### 토큰 테스트
-GET http://34.207.148.130:8080/api/me
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWh4OTBpbWEwMDAwcGgxb21rMDQwbzg3IiwiZW1haWwiOiJhaG5uZXVAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjMwMjc1NjksImV4cCI6MTc2MzYzMjM2OX0.-RdxZDVn8qHt43zv5M__XbvUaepl7gN29xMKhJNHCBk
+### 목업 결제 내역 조회
+GET {{BASE}}/api/payments/mock
+Authorization: Bearer {{TOKEN}}
 
-### 실제 회원가입
-POST http://34.207.148.130:8080/api/auth/signup
+### 목업 결제 강제 생성 (테스트용)
+POST {{BASE}}/api/payments/mock/charge
 Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
 
 {
-  "email": "yeye@example.com",
-  "password": "yeye1234",
-  "nickname": "예예"
+  "amount": 30000,
+  "currency": "KRW",
+  "metadata": {
+    "note": "manual-test"
+  }
 }
 
-### 실제 회원가입
-POST http://localhost:8080/api/auth/signup
+### 1. 방 생성 (로컬)
+### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@JWT 갱신 필수!)
+POST {{BASE}}/api/rooms
+Authorization: Bearer {{TOKEN}}
 Content-Type: application/json
 
 {
-  "email": "ahnneu@naver.com",
-  "password": "tkddk128!!",
-  "nickname": "안느"
+  "title": "전북대 → 시외버스터미널",
+  "departureLabel": "전북대 구정문",
+  "departureLat": 35.846100,
+  "departureLng": 127.129100,
+  "arrivalLabel": "전주 시외버스터미널",
+  "arrivalLat": 35.825000,
+  "arrivalLng": 127.148000,
+  "departureTime": "2025-11-20T15:30:00.000Z",
+  "capacity": 4,
+  "priority": "time",
+  "estimatedFare": 12000
 }

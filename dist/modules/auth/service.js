@@ -19,6 +19,7 @@ async function signUp(input) {
     const user = await prisma_1.prisma.user.create({
         data: {
             email: input.email,
+            name: input.nickname || input.email,
             passwordHash,
             nickname: input.nickname
         },
@@ -31,10 +32,14 @@ async function login(input) {
     const user = await prisma_1.prisma.user.findUnique({ where: { email: input.email } });
     if (!user)
         throw new Error('INVALID_CREDENTIALS');
+    if (!user.passwordHash)
+        throw new Error('INVALID_CREDENTIALS');
     const ok = await bcrypt_1.default.compare(input.password, user.passwordHash);
     if (!ok)
         throw new Error('INVALID_CREDENTIALS');
     const safeUser = { id: user.id, email: user.email, nickname: user.nickname, createdAt: user.createdAt };
-    const token = (0, jwt_1.signJwt)({ sub: user.id, email: user.email });
+    if (!safeUser.email)
+        throw new Error('INVALID_CREDENTIALS');
+    const token = (0, jwt_1.signJwt)({ sub: user.id, email: safeUser.email });
     return { user: safeUser, token };
 }
