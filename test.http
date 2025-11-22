@@ -70,3 +70,33 @@ Content-Type: application/json
   "currentPassword": "123456789!",
   "newPassword": "987654321!"
 }
+
+### Social Login (Kakao)
+POST {{BASE}}/api/auth/social/login
+Content-Type: application/json
+
+{
+  "provider": "kakao",
+  "code": "kakao_authorization_code_here",
+  "redirectUri": "http://localhost:5173/auth/kakao/callback"
+}
+
+### Social Login (Google)
+POST {{BASE}}/api/auth/social/login
+Content-Type: application/json
+
+{
+  "provider": "google",
+  "accessToken": "google_user_access_token_here"
+}
+
+### Complete Social Consent
+POST {{BASE}}/api/auth/social/consent
+Content-Type: application/json
+
+{
+  "pendingToken": "pending_token_from_login_response",
+  "termsConsent": true,
+  "smsConsent": false,
+  "name": "소셜 사용자"
+}

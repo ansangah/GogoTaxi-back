@@ -9,7 +9,7 @@ export const router = Router();
 // 상태 확인
 router.get('/', (_req, res) => res.json({ message: 'GogoTaxi backend up' }));
 
-// 인증 관련
+// 인증 관련 라우터
 router.use('/auth', authRouter);
 
 // 보호 API

@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { SignUpDto, LoginDto, RefreshTokenDto } from './dto';
-import { signUp, login, refreshTokens, logout } from './service';
+import { SignUpDto, LoginDto, RefreshTokenDto, SocialLoginDto, SocialConsentDto } from './dto';
+import { signUp, login, refreshTokens, logout, socialLogin, completeSocialConsent } from './service';
+import { ENV } from '../../config/env';
 
 export const authRouter = Router();
 
@@ -60,6 +61,107 @@ authRouter.post('/logout', async (req, res) => {
       return res.status(401).json({ message: 'Invalid or expired refresh token' });
     }
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+authRouter.get('/social/kakao/start', (req, res) => {
+  if (!ENV.KAKAO_REST_API_KEY || !ENV.KAKAO_REDIRECT_URI) {
+    return res.status(500).json({ message: 'Kakao OAuth not configured on server' });
+  }
+  const url = new URL('https://kauth.kakao.com/oauth/authorize');
+  url.searchParams.set('client_id', ENV.KAKAO_REST_API_KEY);
+  url.searchParams.set('redirect_uri', ENV.KAKAO_REDIRECT_URI);
+  url.searchParams.set('response_type', 'code');
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  if (state) url.searchParams.set('state', state);
+  res.redirect(url.toString());
+});
+
+authRouter.get('/social/kakao/callback', async (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  if (!code) return res.status(400).json({ message: 'Missing authorization code' });
+
+  try {
+    const result = await socialLogin(
+      { provider: 'kakao', code, redirectUri: ENV.KAKAO_REDIRECT_URI },
+      parseRequestMeta(req)
+    );
+
+    if (result.status === 'needs_consent') {
+      const target = ENV.SOCIAL_CONSENT_REDIRECT_URI || 'http://localhost:5173/social-consent';
+      const url = new URL(target);
+      url.searchParams.set('pendingToken', result.pendingToken);
+      url.searchParams.set('provider', result.provider);
+      if (result.profileName) url.searchParams.set('name', result.profileName);
+      if (state) url.searchParams.set('redirect', state);
+      return res.redirect(url.toString());
+    }
+
+    // Already consented: redirect to front with tokens
+    const successTarget = ENV.SOCIAL_LOGIN_SUCCESS_REDIRECT_URI || 'http://localhost:5173/home';
+    const url = new URL(successTarget);
+    if (state) url.searchParams.set('redirect', state);
+    url.searchParams.set('provider', 'kakao');
+    url.searchParams.set('accessToken', result.accessToken);
+    if (result.refreshToken) url.searchParams.set('refreshToken', result.refreshToken);
+    return res.redirect(url.toString());
+  } catch (e: any) {
+    if (
+      ['KAKAO_PROFILE_MISSING', 'KAKAO_TOKEN_EXCHANGE_FAILED'].includes(e?.message) ||
+      ['KAKAO_ACCESS_TOKEN_REQUIRED'].includes(e?.message)
+    ) {
+      return res.status(401).json({ message: 'Invalid or expired social token' });
+    }
+    if (e?.message === 'KAKAO_OAUTH_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Kakao OAuth not configured on server' });
+    }
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+authRouter.post('/social/login', async (req, res) => {
+  try {
+    const input = SocialLoginDto.parse(req.body);
+    const result = await socialLogin(input, parseRequestMeta(req));
+    res.json(result);
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (
+      ['KAKAO_PROFILE_MISSING', 'GOOGLE_PROFILE_MISSING', 'GOOGLE_TOKEN_EXCHANGE_FAILED', 'KAKAO_TOKEN_EXCHANGE_FAILED'].includes(
+        e?.message
+      )
+    ) {
+      return res.status(401).json({ message: 'Invalid or expired social token' });
+    }
+    if (['KAKAO_ACCESS_TOKEN_REQUIRED', 'GOOGLE_TOKEN_REQUIRED'].includes(e?.message)) {
+      return res.status(400).json({ message: 'Missing social login token' });
+    }
+    if (e?.message === 'GOOGLE_OAUTH_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Google OAuth not configured on server' });
+    }
+    if (e?.message === 'KAKAO_OAUTH_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Kakao OAuth not configured on server' });
+    }
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+authRouter.post('/social/consent', async (req, res) => {
+  try {
+    const input = SocialConsentDto.parse(req.body);
+    const session = await completeSocialConsent(input, parseRequestMeta(req));
+    res.json(session);
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (['INVALID_TOKEN_TYPE', 'SOCIAL_CONSENT_REQUIRED'].includes(e?.message) || ['TokenExpiredError', 'JsonWebTokenError'].includes(e?.name)) {
+      return res.status(401).json({ message: 'Invalid or expired pending token' });
+    }
+    if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
     console.error(e);
     res.status(500).json({ message: 'Internal error' });
   }

@@ -9,12 +9,21 @@ export type AppJwtPayload = {
   jti: string;
   type: TokenType;
 };
+export type SocialPendingPayload = {
+  sub: string;
+  loginId: string;
+  provider: string;
+  jti: string;
+  type: 'social_pending';
+};
 
 const ACCESS_SECRET: jwt.Secret = ENV.JWT_SECRET;
 const REFRESH_SECRET: jwt.Secret = ENV.JWT_REFRESH_SECRET;
+const SOCIAL_PENDING_SECRET: jwt.Secret = ENV.JWT_SECRET;
 
-const ACCESS_EXPIRES_IN: Exclude<jwt.SignOptions['expiresIn'], undefined> = ENV.JWT_ACCESS_EXPIRES_IN;
-const REFRESH_EXPIRES_IN: Exclude<jwt.SignOptions['expiresIn'], undefined> = ENV.JWT_REFRESH_EXPIRES_IN;
+const ACCESS_EXPIRES_IN = ENV.JWT_ACCESS_EXPIRES_IN as jwt.SignOptions['expiresIn'];
+const REFRESH_EXPIRES_IN = ENV.JWT_REFRESH_EXPIRES_IN as jwt.SignOptions['expiresIn'];
+const SOCIAL_PENDING_EXPIRES_IN = '30m' as jwt.SignOptions['expiresIn'];
 
 type SignResult = {
   token: string;
@@ -64,4 +73,21 @@ export function verifyRefreshJwt(token: string): AppJwtPayload {
 
 export function getExpiryDate(token: string): Date | null {
   return decodeExpiry(token);
+}
+
+export function issueSocialPendingToken(payload: Pick<SocialPendingPayload, 'sub' | 'loginId' | 'provider'>) {
+  const jti = randomUUID();
+  const tokenPayload: SocialPendingPayload = { ...payload, jti, type: 'social_pending' };
+  const token = jwt.sign(tokenPayload as Record<string, unknown>, SOCIAL_PENDING_SECRET, {
+    expiresIn: SOCIAL_PENDING_EXPIRES_IN
+  });
+  return { token, payload: tokenPayload, expiresAt: decodeExpiry(token) };
+}
+
+export function verifySocialPendingToken(token: string): SocialPendingPayload {
+  const payload = jwt.verify(token, SOCIAL_PENDING_SECRET) as SocialPendingPayload;
+  if (payload.type !== 'social_pending') {
+    throw new Error('INVALID_TOKEN_TYPE');
+  }
+  return payload;
 }
