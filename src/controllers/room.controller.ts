@@ -724,14 +724,29 @@ export async function leaveRoom(req: Request, res: Response) {
       select: {
         id: true,
         creatorId: true,
-        status: true
+        status: true,
+        participants: {
+          select: {
+            id: true,
+            userId: true
+          }
+        }
       }
     });
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
     if (room.creatorId === userId) {
-      return res.status(403).json({ message: 'Host cannot leave their own room' });
+      if (room.participants.length > 1) {
+        return res
+          .status(403)
+          .json({ message: 'Host cannot leave while other participants remain' });
+      }
+      await prisma.$transaction([
+        prisma.roomParticipant.deleteMany({ where: { roomId: room.id } }),
+        prisma.room.delete({ where: { id: room.id } })
+      ]);
+      return res.json({ room: null, deleted: true });
     }
 
     const participant = await prisma.roomParticipant.findFirst({
