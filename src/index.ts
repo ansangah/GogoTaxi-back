@@ -77,5 +77,3 @@ app.use(errorHandler);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server listening on ${PORT}`);
 });
-
-app.use("/api", roomRoutes);
