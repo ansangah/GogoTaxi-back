@@ -235,6 +235,26 @@ exports.Prisma.DispatchedTaxiScalarFieldEnum = {
   carNumber: 'carNumber'
 };
 
+exports.Prisma.RoomRideStateScalarFieldEnum = {
+  id: 'id',
+  roomId: 'roomId',
+  stage: 'stage',
+  deeplinkUrl: 'deeplinkUrl',
+  pickupLabel: 'pickupLabel',
+  pickupLat: 'pickupLat',
+  pickupLng: 'pickupLng',
+  dropoffLabel: 'dropoffLabel',
+  dropoffLat: 'dropoffLat',
+  dropoffLng: 'dropoffLng',
+  driverName: 'driverName',
+  carModel: 'carModel',
+  carNumber: 'carNumber',
+  note: 'note',
+  updatedById: 'updatedById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.NoticeScalarFieldEnum = {
   id: 'id',
   title: 'title',
@@ -349,6 +369,18 @@ exports.SettlementRecordStatus = exports.$Enums.SettlementRecordStatus = {
   failed: 'failed'
 };
 
+exports.RoomRideStage = exports.$Enums.RoomRideStage = {
+  idle: 'idle',
+  requesting: 'requesting',
+  deeplink_ready: 'deeplink_ready',
+  dispatching: 'dispatching',
+  driver_assigned: 'driver_assigned',
+  arriving: 'arriving',
+  onboard: 'onboard',
+  completed: 'completed',
+  canceled: 'canceled'
+};
+
 exports.NoticeType = exports.$Enums.NoticeType = {
   update: 'update',
   info: 'info',
@@ -370,6 +402,7 @@ exports.Prisma.ModelName = {
   Review: 'Review',
   Report: 'Report',
   DispatchedTaxi: 'DispatchedTaxi',
+  RoomRideState: 'RoomRideState',
   Notice: 'Notice',
   SocialAccount: 'SocialAccount',
   RefreshToken: 'RefreshToken'
