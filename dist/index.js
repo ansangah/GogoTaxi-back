@@ -25,12 +25,19 @@ app.use((0, cors_1.default)({
     origin: [
         "http://localhost:5173",
         "https://ansangah.github.io",
+        "http://172.20.10.7:5173"
     ],
     credentials: true,
 }));
 app.use(express_1.default.raw({
-    type: () => true,
-    limit: '1mb'
+    type: (req) => {
+        const ct = req.headers['content-type'] || '';
+        if (typeof ct === 'string' && ct.toLowerCase().startsWith('multipart/form-data')) {
+            return false;
+        }
+        return true;
+    },
+    limit: '5mb'
 }));
 app.use((req, _res, next) => {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {

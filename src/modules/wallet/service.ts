@@ -32,6 +32,16 @@ export async function recordTransaction(input: RecordTxInput) {
       if (dup) return dup;
     }
 
+    if (input.roomId) {
+      const roomExists = await tx.room.findUnique({
+        where: { id: input.roomId },
+        select: { id: true }
+      });
+      if (!roomExists) {
+        throw new Error('ROOM_NOT_FOUND');
+      }
+    }
+
     const user = await tx.user.findUnique({
       where: { id: input.userId },
       select: { walletBalance: true }

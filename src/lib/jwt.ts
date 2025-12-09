@@ -48,11 +48,25 @@ function signToken(type: TokenType, payload: Pick<AppJwtPayload, 'sub' | 'loginI
 
 function verifyToken(type: TokenType, token: string): AppJwtPayload {
   const secret = type === 'access' ? ACCESS_SECRET : REFRESH_SECRET;
-  const payload = jwt.verify(token, secret) as AppJwtPayload;
-  if (payload.type !== type) {
+  const payload = jwt.verify(token, secret) as Partial<AppJwtPayload> & Record<string, any>;
+
+  // Legacy tokens might not include the `type`/`loginId`/`jti` fields.
+  const payloadType = (payload.type as TokenType | undefined) ?? type;
+  if (payloadType !== type) {
     throw new Error('INVALID_TOKEN_TYPE');
   }
-  return payload;
+  if (!payload.loginId) {
+    // Fall back to any identifier we can find; sub is guaranteed for JWTs we issue.
+    payload.loginId =
+      typeof payload.sub === 'string' && payload.sub.length > 0
+        ? payload.sub
+        : (payload.email as string | undefined) ?? 'unknown';
+  }
+  if (!payload.jti) {
+    payload.jti = `legacy-${payload.sub ?? 'unknown'}`;
+  }
+  payload.type = payloadType;
+  return payload as AppJwtPayload;
 }
 
 export function issueAccessToken(payload: Pick<AppJwtPayload, 'sub' | 'loginId'>) {

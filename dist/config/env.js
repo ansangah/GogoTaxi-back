@@ -22,7 +22,10 @@ exports.ENV = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? '',
     // Prefer backend env, fall back to Vite prefix used by the front-end to reduce setup friction.
-    UBER_CLIENT_ID: process.env.UBER_CLIENT_ID ?? process.env.VITE_UBER_CLIENT_ID ?? ''
+    UBER_CLIENT_ID: process.env.UBER_CLIENT_ID ?? process.env.VITE_UBER_CLIENT_ID ?? '',
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
+    GEMINI_MODEL: process.env.GEMINI_MODEL ?? '',
+    GEMINI_API_VERSION: process.env.GEMINI_API_VERSION ?? ''
 };
 if (!exports.ENV.DATABASE_URL) {
     console.warn('Warning: DATABASE_URL is empty. Set it in .env');

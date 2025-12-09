@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.router = void 0;
 const express_1 = require("express");
+const zod_1 = require("zod");
 // 인증
 const routes_1 = require("./modules/auth/routes");
 const auth_1 = require("./middlewares/auth");
@@ -21,6 +22,9 @@ const routes_5 = require("./modules/notifications/routes");
 // 후기 / 신고
 const routes_6 = require("./modules/review/routes");
 const routes_7 = require("./modules/report/routes");
+const receiptService_1 = require("./modules/rideHistory/receiptService");
+// 이용 기록
+const routes_8 = require("./modules/rideHistory/routes");
 exports.router = (0, express_1.Router)();
 /* ============================================
    상태 확인
@@ -41,6 +45,36 @@ exports.router.use(room_routes_1.default);
    알림
 =============================================== */
 exports.router.use('/notifications', routes_5.notificationsRouter);
+exports.router.use('/rides', routes_8.rideHistoryRouter);
+exports.router.post('/receipts/analyze', auth_1.requireAuth, async (req, res) => {
+    try {
+        const input = zod_1.z
+            .object({
+            imageBase64: zod_1.z.string().min(20, 'imageBase64 is required'),
+            mimeType: zod_1.z.string().optional(),
+            prompt: zod_1.z.string().optional(),
+        })
+            .parse(req.body);
+        const analysis = await (0, receiptService_1.analyzeReceiptImage)(input);
+        res.json({ analysis });
+    }
+    catch (e) {
+        if (e?.name === 'ZodError') {
+            return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+        }
+        if (e?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
+            return res.status(500).json({ message: 'Gemini API key is not configured.' });
+        }
+        console.error('receipt analyze error', e);
+        const isGeminiUnavailable = typeof e?.message === 'string' &&
+            (e.message.includes('GEMINI_FETCH_FAILED') || e.message.includes('GEMINI_REQUEST_FAILED'));
+        res.status(isGeminiUnavailable ? 502 : 500).json({
+            message: isGeminiUnavailable
+                ? 'Gemini Vision 요청에 실패했습니다. 네트워크나 API 키를 확인해 주세요.'
+                : e?.message || 'Failed to analyze receipt',
+        });
+    }
+});
 /* ============================================
    후기 / 신고
 =============================================== */

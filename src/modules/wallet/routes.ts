@@ -6,7 +6,6 @@ import { ensureBalanceForDebit, getBalance, recordTransaction } from './service'
 import { WalletTxKind } from '@prisma/client';
 import multer from 'multer';
 import { extractAmountFromImage } from '../payments/gemini';
-import { ensureBalanceForDebit } from './service';
 
 export const walletRouter = Router();
 const upload = multer({
@@ -41,6 +40,7 @@ walletRouter.post('/topup', async (req, res) => {
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
     if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
+    if (e?.message === 'ROOM_NOT_FOUND') return res.status(404).json({ message: 'Room not found' });
     console.error(e);
     res.status(500).json({ message: 'Internal error' });
   }
@@ -69,6 +69,7 @@ walletRouter.post('/charge', async (req, res) => {
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
     if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
+    if (e?.message === 'ROOM_NOT_FOUND') return res.status(404).json({ message: 'Room not found' });
     if (e?.message === 'INSUFFICIENT_BALANCE') return res.status(402).json({ message: 'Insufficient balance' });
     console.error(e);
     res.status(500).json({ message: 'Internal error' });

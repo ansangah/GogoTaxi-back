@@ -17,3 +17,9 @@ declare module "prisma/config" {
   export function defineConfig(config: PrismaConfig): PrismaConfig;
   export function env(name: string, fallback?: string): string;
 }
+
+declare namespace Express {
+  interface Request {
+    file?: Express.Multer.File;
+  }
+}

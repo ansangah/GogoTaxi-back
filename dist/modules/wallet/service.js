@@ -24,6 +24,15 @@ async function recordTransaction(input) {
             if (dup)
                 return dup;
         }
+        if (input.roomId) {
+            const roomExists = await tx.room.findUnique({
+                where: { id: input.roomId },
+                select: { id: true }
+            });
+            if (!roomExists) {
+                throw new Error('ROOM_NOT_FOUND');
+            }
+        }
         const user = await tx.user.findUnique({
             where: { id: input.userId },
             select: { walletBalance: true }
@@ -59,8 +68,9 @@ async function ensureBalanceForDebit(userId, amount, opts) {
         return { autoTopUp: false, deficit: 0 };
     }
     const deficit = amount - current;
+    const topUpAmount = Math.ceil(deficit / 10000) * 10000;
     const payment = (0, mockClient_1.mockCharge)({
-        amount: deficit,
+        amount: topUpAmount,
         currency: 'KRW',
         metadata: { userId, roomId: opts?.roomId, reason: opts?.reason }
     });
@@ -68,8 +78,8 @@ async function ensureBalanceForDebit(userId, amount, opts) {
         userId,
         roomId: opts?.roomId,
         kind: client_1.WalletTxKind.auto_top_up,
-        amount: deficit,
+        amount: topUpAmount,
         idempotencyKey: `auto_top_up:${opts?.reason ?? 'debit'}:${opts?.roomId ?? 'general'}:${userId}:${payment.id}`
     });
-    return { autoTopUp: true, deficit, payment };
+    return { autoTopUp: true, deficit, payment, topUpAmount };
 }

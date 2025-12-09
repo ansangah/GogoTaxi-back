@@ -36,9 +36,22 @@ function signToken(type, payload) {
 function verifyToken(type, token) {
     const secret = type === 'access' ? ACCESS_SECRET : REFRESH_SECRET;
     const payload = jsonwebtoken_1.default.verify(token, secret);
-    if (payload.type !== type) {
+    // Legacy tokens might not include the `type`/`loginId`/`jti` fields.
+    const payloadType = payload.type ?? type;
+    if (payloadType !== type) {
         throw new Error('INVALID_TOKEN_TYPE');
     }
+    if (!payload.loginId) {
+        // Fall back to any identifier we can find; sub is guaranteed for JWTs we issue.
+        payload.loginId =
+            typeof payload.sub === 'string' && payload.sub.length > 0
+                ? payload.sub
+                : payload.email ?? 'unknown';
+    }
+    if (!payload.jti) {
+        payload.jti = `legacy-${payload.sub ?? 'unknown'}`;
+    }
+    payload.type = payloadType;
     return payload;
 }
 function issueAccessToken(payload) {

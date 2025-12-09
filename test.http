@@ -1,16 +1,15 @@
 @BASE = http://localhost:8080
 
-@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiNTNkZDI5MTgtNjE5ZS00NDQzLWE1OWQtZWEwMGFiNjEzNzMyIiwiaWF0IjoxNzY0NjY3ODg1LCJleHAiOjE3NjQ2Njg3ODV9.kgzSH7Lb1zW_CjBvmHltf-sDvPX2joLL36qHdlapPB4
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGNoYjQwMDAwMHkwd2pkODZoYnc0IiwibG9naW5JZCI6InNhaW0iLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiMWJiMDQ2YTctODkzMS00ZDU1LTgxOTQtZjk3MzMyMGIzMmM1IiwiaWF0IjoxNzY1MjY4MDYxLCJleHAiOjE3NjUyNjg5NjF9.rsFWNB3uU-H4qybkWSuhSd14S46pFULTlqWYyjGugQA
 @REFRESH = paste_refresh_token_here
 @GEMINI_MODEL = gemini-1.5-flash-latest
-@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWljd3k4eHUwMDAwMHlhY3hzMHllbDZqIiwiZW1haWwiOiJvYWltQGV4YW1wbGUuY29tIiwiaWF0IjoxNzYzOTc2MzIyLCJleHAiOjE3NjQ1ODExMjJ9.qaaKTK7zk7k1yLZqGDuBZKeAuepR69s1XfO_vqT05xY
 
 ### Sign Up
 POST {{BASE}}/api/auth/signup
 Content-Type: application/json
 
 {
-  "loginId": "yeeunee",
+  "loginId": "saim",
   "password": "123456789!",
   "name": "김예은",
   "gender": "F",
@@ -25,7 +24,7 @@ POST {{BASE}}/api/auth/login
 Content-Type: application/json
 
 {
-  "loginId": "yeeunee",
+  "loginId": "saim",
   "password": "123456789!"
 }
 
@@ -106,10 +105,10 @@ Content-Type: application/json
 ### 방(ROOM) 도메인 테스트 (로컬 서버 기준)
 
 ### 1. 방 생성 (로컬)
-### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@JWT 갱신 필수!)
+### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@ACCESS 갱신 필수!)
 
 POST {{BASE}}/api/rooms
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -127,32 +126,32 @@ Content-Type: application/json
 }
 
 ### 방 생성 후, 응답 JSON에서 "id" 값을 복사해서
-@ROOM_ID = cmimqvfhm0003ngeq0na2jdi1
+@ROOM_ID = cmiyb72ot000t0yx4zf33xvc1
 
 ### 2. 방 목록 조회 (전체)
 GET {{BASE}}/api/rooms
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 2-1. 내가 만든/참여한 방 목록 조회 (mine=true)
 GET {{BASE}}/api/rooms?mine=true
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 2-2. 특정 방 상세 정보 확인 (참여자/정산 상태 체크)
 GET {{BASE}}/api/rooms/{{ROOM_ID}}
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### --- 시나리오 테스트 템플릿 ---
 ### 공통 변수는 필요 시 아래처럼 추가해서 사용
 # @SETTLEMENT_ROOM_ID = {{ROOM_ID}}
-@PAYMENT_SESSION_ID = 2d2fa18b-2eef-45e6-8dd6-710314e75d03
+@PAYMENT_SESSION_ID = b92d1988-74e7-40bf-b99c-55a47f47b94d
 
 ### 3. 지갑 잔액 조회
 GET {{BASE}}/api/wallet/balance
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 4. 지갑 충전 (Top-up)
 POST {{BASE}}/api/wallet/topup
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -163,7 +162,7 @@ Content-Type: application/json
 
 ### 5. 지갑 차감/환불 (Charge)
 POST {{BASE}}/api/wallet/charge
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -179,7 +178,7 @@ Content-Type: application/json
 
 ### 6. 결제 세션 생성 (Mock PG)
 POST {{BASE}}/api/payments/mock/session
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -194,29 +193,23 @@ Content-Type: application/json
 
 ### 7. 결제 세션 성공 처리 (sessionId를 응답에서 복사)
 POST {{BASE}}/api/payments/mock/session/{{PAYMENT_SESSION_ID}}/confirm
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 8. 결제 세션 실패 처리 (테스트용)
 POST {{BASE}}/api/payments/mock/session/{{PAYMENT_SESSION_ID}}/fail
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 9. 결제 세션 목록 확인
 GET {{BASE}}/api/payments/mock/sessions
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 10. 정산 - 예치금 홀드
 POST {{BASE}}/api/settlements/rooms/{{ROOM_ID}}/hold
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 11. 정산 - 최종 정산
 POST {{BASE}}/api/settlements/rooms/{{ROOM_ID}}/finalize
-Authorization: Bearer {{JWT}}
-
-### Health Check
-GET {{BASE}}/health
-
-### Sign Up
-POST {{BASE}}/api/auth/signup
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -225,11 +218,11 @@ Content-Type: application/json
 
 ### 12. 알림 목록 (메모리 저장된 알림 확인)
 GET {{BASE}}/api/notifications
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 13. 알림 발송 테스트
 POST {{BASE}}/api/notifications/test
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -239,7 +232,7 @@ Content-Type: application/json
 
 ### 14. 후기 작성
 POST {{BASE}}/api/reviews
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -250,15 +243,15 @@ Content-Type: application/json
 
 ### 15. 방 후기 목록 조회
 GET {{BASE}}/api/reviews/room/{{ROOM_ID}}
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 16. 내 후기 목록
 GET {{BASE}}/api/reviews/me
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 17. 신고 작성
 POST {{BASE}}/api/reports
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
 {
@@ -269,22 +262,22 @@ Content-Type: application/json
 
 ### 18. 방 신고 목록 조회
 GET {{BASE}}/api/reports/room/{{ROOM_ID}}
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 19. 내 신고 목록
 GET {{BASE}}/api/reports/me
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 20. 내 이용 기록 (마이페이지)
 GET {{BASE}}/api/rides/history
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ### 21. 이용 기록 + 후기 확인 셀프 시나리오
 # 1) 위 10~11(hold/finalize) 호출 후
 # 2) 후기 작성(14)까지 완료하고
 # 3) 아래 요청을 다시 보내면 histories 배열에 방 정보 + 후기 여부가 나타납니다.
 GET {{BASE}}/api/rides/history
-Authorization: Bearer {{JWT}}
+Authorization: Bearer {{ACCESS}}
 
 ########################################################
 
@@ -296,7 +289,7 @@ Authorization: Bearer {{JWT}}
 
 ### 1. 방 생성 (로컬)
 
-### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@JWT 갱신 필수!)
+### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@ACCESS 갱신 필수!)
 
 POST {{BASE}}/api/rooms
 Authorization: Bearer {{ACCESS}}
@@ -322,8 +315,6 @@ Content-Type: application/json
 ### ⚠ 방 생성 후, 응답 JSON에서 "id" 값을 복사해서
 
 ###    아래 @ROOM_ID 자리에 넣어줘야 해
-
-@ROOM_ID = cmilro1z40005ph4s7uvl9su0
 
 
 ### 2. 방 목록 조회 (전체)
@@ -375,7 +366,7 @@ Content-Type: application/json
 
 ### 7. 방 참여 (좌석 선택)
 
-### - 현재 로그인한 사용자(@JWT)로, 위에서 만든 ROOM_ID 방에 참여
+### - 현재 로그인한 사용자(@ACCESS)로, 위에서 만든 ROOM_ID 방에 참여
 
 POST {{BASE}}/api/rooms/{{ROOM_ID}}/join
 Authorization: Bearer {{ACCESS}}

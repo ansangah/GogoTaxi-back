@@ -25,13 +25,11 @@ async function holdEstimatedFare(roomId) {
         throw new Error('ROOM_NOT_FOUND');
     if (room.estimatedFare == null)
         throw new Error('ESTIMATED_FARE_MISSING');
-    const memberIds = [room.creatorId, ...room.participants.map((p) => p.userId)];
+    const memberIds = Array.from(new Set([room.creatorId, ...room.participants.map((p) => p.userId)]));
     const perHead = (0, pricing_1.splitCollectPerHead)(room.estimatedFare, memberIds.length);
     for (const userId of memberIds) {
         const isHost = userId === room.creatorId;
-        if (isHost) {
-            await (0, service_1.ensureBalanceForDebit)(userId, perHead, { roomId, reason: 'hold' });
-        }
+        await (0, service_1.ensureBalanceForDebit)(userId, perHead, { roomId, reason: 'hold' });
         const kind = isHost ? client_1.WalletTxKind.host_charge : client_1.WalletTxKind.hold_deposit;
         await (0, service_1.recordTransaction)({
             userId,
@@ -73,7 +71,7 @@ async function finalizeRoomSettlement(roomId, actualFare) {
         throw new Error('ROOM_NOT_FOUND');
     if (room.estimatedFare == null)
         throw new Error('ESTIMATED_FARE_MISSING');
-    const memberIds = [room.creatorId, ...room.participants.map((p) => p.userId)];
+    const memberIds = Array.from(new Set([room.creatorId, ...room.participants.map((p) => p.userId)]));
     const noShow = new Set(room.noShowUserIds ?? []);
     const delta = actualFare - room.estimatedFare;
     const activeForExtra = memberIds.filter((id) => !noShow.has(id));
@@ -83,9 +81,7 @@ async function finalizeRoomSettlement(roomId, actualFare) {
         extraPerHead = (0, pricing_1.splitCollectPerHead)(delta, activeForExtra.length);
         for (const userId of activeForExtra) {
             const isHost = userId === room.creatorId;
-            if (isHost) {
-                await (0, service_1.ensureBalanceForDebit)(userId, extraPerHead, { roomId, reason: 'extra' });
-            }
+            await (0, service_1.ensureBalanceForDebit)(userId, extraPerHead, { roomId, reason: 'extra' });
             await (0, service_1.recordTransaction)({
                 userId,
                 roomId,
@@ -127,8 +123,50 @@ async function finalizeRoomSettlement(roomId, actualFare) {
         where: { id: roomId },
         data: {
             actualFare,
-            settlementStatus: 'settled'
+            settlementStatus: 'settled',
+            status: 'closed'
         }
+    });
+    const settledAt = new Date();
+    const settlementRecords = await prisma_1.prisma.roomSettlement.findMany({
+        where: { roomId },
+        select: {
+            userId: true,
+            role: true,
+            deposit: true,
+            extraCollect: true,
+            refund: true,
+            netAmount: true
+        }
+    });
+    await prisma_1.prisma.$transaction(async (tx) => {
+        const rideHistoryDelegate = tx?.rideHistory;
+        if (!rideHistoryDelegate || typeof rideHistoryDelegate.upsert !== 'function') {
+            console.warn('rideHistory delegate is unavailable; skipping history upsert.');
+        }
+        else {
+            for (const record of settlementRecords) {
+                const payload = {
+                    role: record.role,
+                    deposit: record.deposit,
+                    extraCollect: record.extraCollect,
+                    refund: record.refund,
+                    netAmount: record.netAmount,
+                    actualFare,
+                    settledAt
+                };
+                await rideHistoryDelegate.upsert({
+                    where: { roomId_userId: { roomId, userId: record.userId } },
+                    update: payload,
+                    create: {
+                        roomId,
+                        userId: record.userId,
+                        ...payload
+                    }
+                });
+            }
+        }
+        await tx.roomParticipant.deleteMany({ where: { roomId } });
     });
     const summary = delta === 0
         ? '추가 정산 금액 없이 종료되었습니다.'

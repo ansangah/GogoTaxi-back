@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { authRouter } from '../modules/auth/routes';
 import { requireAuth } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
@@ -8,6 +9,12 @@ import { paymentsRouter } from '../modules/payments/routes';
 import { walletRouter } from '../modules/wallet/routes';
 import { getProfile, updateProfile, changePassword } from '../modules/auth/service';
 import { UpdateProfileDto, ChangePasswordDto } from '../modules/auth/dto';
+import { settlementRouter } from '../modules/settlement/routes';
+import { notificationsRouter } from '../modules/notifications/routes';
+import { reviewRouter } from '../modules/review/routes';
+import { reportRouter } from '../modules/report/routes';
+import { rideHistoryRouter } from '../modules/rideHistory/routes';
+import { analyzeReceiptImage } from '../modules/rideHistory/receiptService';
 
 export const router = Router();
 
@@ -18,8 +25,43 @@ router.get('/health', (_req, res) => {
 router.use('/auth', authRouter);
 router.use('/payments', paymentsRouter);
 router.use('/wallet', walletRouter);
+router.use('/settlements', settlementRouter);
 router.use(roomRouter);
 router.use(rideRouter);
+router.use('/rides', rideHistoryRouter);
+router.use('/notifications', notificationsRouter);
+router.use('/reviews', reviewRouter);
+router.use('/reports', reportRouter);
+
+router.post('/receipts/analyze', requireAuth, async (req, res) => {
+  try {
+    const input = z
+      .object({
+        imageBase64: z.string().min(20, 'imageBase64 is required'),
+        mimeType: z.string().optional(),
+        prompt: z.string().optional()
+      })
+      .parse(req.body);
+    const analysis = await analyzeReceiptImage(input);
+    res.json({ analysis });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') {
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    }
+    if (e?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
+    }
+    console.error('receipt analyze error', e);
+    const isGeminiUnavailable =
+      typeof e?.message === 'string' &&
+      (e.message.includes('GEMINI_FETCH_FAILED') || e.message.includes('GEMINI_REQUEST_FAILED'));
+    res.status(isGeminiUnavailable ? 502 : 500).json({
+      message: isGeminiUnavailable
+        ? 'Gemini Vision 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.'
+        : e?.message || 'Failed to analyze receipt'
+    });
+  }
+});
 
 router.get('/me', requireAuth, async (req: any, res) => {
   try {
