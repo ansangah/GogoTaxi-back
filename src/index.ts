@@ -25,7 +25,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://ansangah.github.io",
-      "http://172.20.10.7:5173"
+      "http://192.0.0.2:5173"
     ],
     credentials: true,
   })
