@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth';
 import {
+  analyzeDispatchInfo,
   createUberDeeplink,
   getRoomRideState,
   requestRoomUberRide,
@@ -14,5 +15,6 @@ router.get('/rides/uber/deeplink', requireAuth, createUberDeeplink);
 router.get('/rooms/:id/ride-state', requireAuth, getRoomRideState);
 router.post('/rooms/:id/ride/request', requireAuth, requestRoomUberRide);
 router.post('/rooms/:id/ride/stage', requireAuth, updateRideStage);
+router.post('/rooms/:id/ride/dispatch-info', requireAuth, analyzeDispatchInfo);
 
 export default router;

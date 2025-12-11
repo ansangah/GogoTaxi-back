@@ -10,6 +10,8 @@ import {
   serializeRideState,
   serializeRoom
 } from './room.controller';
+import { analyzeDispatchScreenshot } from '../modules/ride/dispatchVisionService';
+import { holdEstimatedFare } from '../modules/settlement/service';
 
 const uberDeeplinkSchema = z
   .object({
@@ -40,6 +42,12 @@ const rideStageUpdateSchema = z.object({
   driverName: z.string().max(100).optional(),
   carModel: z.string().max(100).optional(),
   carNumber: z.string().max(50).optional()
+});
+
+const dispatchScreenshotSchema = z.object({
+  imageBase64: z.string().min(20, 'imageBase64 is required'),
+  mimeType: z.string().optional(),
+  prompt: z.string().optional()
 });
 
 const roomParamSchema = z.object({ id: z.string().cuid() });
@@ -292,9 +300,160 @@ export async function updateRideStage(req: Request, res: Response) {
     }
 
     broadcastRoom(updatedRoom, userId);
-    return res.json({ rideState: serializeRideState(rideState), room: serializeRoom(updatedRoom, userId) });
+  return res.json({ rideState: serializeRideState(rideState), room: serializeRoom(updatedRoom, userId) });
   } catch (error) {
     console.error('updateRideStage error', error);
     return res.status(500).json({ message: 'Failed to update ride stage' });
+  }
+}
+
+const PROMOTABLE_STAGES = new Set<RoomRideStage>([
+  RoomRideStage.idle,
+  RoomRideStage.requesting,
+  RoomRideStage.deeplink_ready,
+  RoomRideStage.dispatching
+]);
+
+function normalizePipe(value?: string | null) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  return trimmed.length ? trimmed : null;
+}
+
+export async function analyzeDispatchInfo(req: Request, res: Response) {
+  const param = roomParamSchema.safeParse(req.params);
+  if (!param.success) {
+    return res.status(400).json({ message: 'Validation failed', issues: param.error.issues });
+  }
+
+  const body = dispatchScreenshotSchema.safeParse(req.body);
+  if (!body.success) {
+    return res.status(400).json({ message: 'Validation failed', issues: body.error.issues });
+  }
+
+  const userId = (req as any).user?.sub;
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const room = await prisma.room.findUnique({
+      where: { id: param.data.id },
+      select: {
+        id: true,
+        creatorId: true,
+        status: true,
+        settlementStatus: true,
+        estimatedFare: true
+      }
+    });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    if (room.creatorId !== userId) {
+      return res.status(403).json({ message: '호스트만 배차 정보를 업데이트할 수 있습니다.' });
+    }
+
+    const analysis = await analyzeDispatchScreenshot(body.data);
+    const normalizedDriver = normalizePipe(analysis.driverName);
+    const normalizedCarNumber = normalizePipe(analysis.carNumber);
+    const normalizedCarModel = normalizePipe(analysis.carModel);
+
+    const currentRideState = await prisma.roomRideState.findUnique({
+      where: { roomId: room.id }
+    });
+    const promoteStage =
+      !currentRideState || PROMOTABLE_STAGES.has(currentRideState.stage ?? RoomRideStage.idle);
+    const stageToApply = promoteStage
+      ? RoomRideStage.driver_assigned
+      : currentRideState?.stage ?? RoomRideStage.idle;
+
+    const nextDriverName = normalizedDriver ?? currentRideState?.driverName ?? null;
+    const nextCarNumber = normalizedCarNumber ?? currentRideState?.carNumber ?? null;
+    const nextCarModel = normalizedCarModel ?? currentRideState?.carModel ?? null;
+
+    const rideState = await prisma.roomRideState.upsert({
+      where: { roomId: room.id },
+      create: {
+        roomId: room.id,
+        stage: stageToApply,
+        driverName: nextDriverName,
+        carNumber: nextCarNumber,
+        carModel: nextCarModel,
+        updatedById: userId
+      },
+      update: {
+        ...(promoteStage ? { stage: stageToApply } : {}),
+        driverName: nextDriverName,
+        carNumber: nextCarNumber,
+        carModel: nextCarModel,
+        updatedById: userId
+      }
+    });
+
+    if (room.status !== RoomStatus.dispatching) {
+      await prisma.room.update({ where: { id: room.id }, data: { status: RoomStatus.dispatching } });
+    }
+
+    let settlementHold: Awaited<ReturnType<typeof holdEstimatedFare>> | null = null;
+    let settlementHoldError: { code: string; message: string } | null = null;
+    const settlementSnapshot = await prisma.room.findUnique({
+      where: { id: room.id },
+      select: { settlementStatus: true, estimatedFare: true }
+    });
+    if (
+      settlementSnapshot?.settlementStatus === 'pending' &&
+      settlementSnapshot.estimatedFare != null
+    ) {
+      try {
+        settlementHold = await holdEstimatedFare(room.id);
+      } catch (error: any) {
+        settlementHoldError = interpretSettlementError(error);
+      }
+    }
+
+    const updatedRoom = await loadRoomOrThrow(room.id);
+    broadcastRoom(updatedRoom, userId);
+    return res.json({
+      analysis,
+      driver: {
+        name: rideState.driverName,
+        carModel: rideState.carModel,
+        carNumber: rideState.carNumber
+      },
+      rideState: serializeRideState(rideState),
+      room: serializeRoom(updatedRoom, userId),
+      settlementHold,
+      settlementHoldError
+    });
+  } catch (error: any) {
+    console.error('analyzeDispatchInfo raw error', error);
+    if (error?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
+    }
+    const isGeminiUnavailable =
+      typeof error?.message === 'string' &&
+      (error.message.includes('GEMINI_FETCH_FAILED') ||
+        error.message.includes('GEMINI_REQUEST_FAILED'));
+    if (isGeminiUnavailable) {
+      return res
+        .status(502)
+        .json({ message: 'Gemini Vision 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+    }
+    return res.status(500).json({ message: 'Failed to analyze dispatch screenshot' });
+  }
+}
+
+function interpretSettlementError(error: any): { code: string; message: string } {
+  const code = typeof error?.message === 'string' ? error.message : 'UNKNOWN';
+  switch (code) {
+    case 'ROOM_NOT_FOUND':
+      return { code, message: '방을 찾을 수 없어 정산을 진행하지 못했습니다.' };
+    case 'ESTIMATED_FARE_MISSING':
+      return { code, message: '예상 요금이 설정되어 있지 않아 예치금을 잡을 수 없습니다.' };
+    case 'INSUFFICIENT_BALANCE':
+      return { code, message: '일부 참여자의 잔액이 부족해 자동 결제가 실패했습니다.' };
+    default:
+      return { code, message: '자동 예치금 결제 중 오류가 발생했습니다.' };
   }
 }

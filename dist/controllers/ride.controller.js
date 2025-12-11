@@ -4,11 +4,14 @@ exports.createUberDeeplink = createUberDeeplink;
 exports.getRoomRideState = getRoomRideState;
 exports.requestRoomUberRide = requestRoomUberRide;
 exports.updateRideStage = updateRideStage;
+exports.analyzeDispatchInfo = analyzeDispatchInfo;
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const env_1 = require("../config/env");
 const prisma_1 = require("../lib/prisma");
 const room_controller_1 = require("./room.controller");
+const dispatchVisionService_1 = require("../modules/ride/dispatchVisionService");
+const service_1 = require("../modules/settlement/service");
 const uberDeeplinkSchema = zod_1.z
     .object({
     pickupLat: zod_1.z.coerce.number(),
@@ -37,6 +40,11 @@ const rideStageUpdateSchema = zod_1.z.object({
     driverName: zod_1.z.string().max(100).optional(),
     carModel: zod_1.z.string().max(100).optional(),
     carNumber: zod_1.z.string().max(50).optional()
+});
+const dispatchScreenshotSchema = zod_1.z.object({
+    imageBase64: zod_1.z.string().min(20, 'imageBase64 is required'),
+    mimeType: zod_1.z.string().optional(),
+    prompt: zod_1.z.string().optional()
 });
 const roomParamSchema = zod_1.z.object({ id: zod_1.z.string().cuid() });
 const toDecimal = (value) => new client_1.Prisma.Decimal(value);
@@ -269,5 +277,141 @@ async function updateRideStage(req, res) {
     catch (error) {
         console.error('updateRideStage error', error);
         return res.status(500).json({ message: 'Failed to update ride stage' });
+    }
+}
+const PROMOTABLE_STAGES = new Set([
+    client_1.RoomRideStage.idle,
+    client_1.RoomRideStage.requesting,
+    client_1.RoomRideStage.deeplink_ready,
+    client_1.RoomRideStage.dispatching
+]);
+function normalizePipe(value) {
+    if (typeof value !== 'string')
+        return null;
+    const trimmed = value.replace(/\s+/g, ' ').trim();
+    return trimmed.length ? trimmed : null;
+}
+async function analyzeDispatchInfo(req, res) {
+    const param = roomParamSchema.safeParse(req.params);
+    if (!param.success) {
+        return res.status(400).json({ message: 'Validation failed', issues: param.error.issues });
+    }
+    const body = dispatchScreenshotSchema.safeParse(req.body);
+    if (!body.success) {
+        return res.status(400).json({ message: 'Validation failed', issues: body.error.issues });
+    }
+    const userId = req.user?.sub;
+    if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+    try {
+        const room = await prisma_1.prisma.room.findUnique({
+            where: { id: param.data.id },
+            select: {
+                id: true,
+                creatorId: true,
+                status: true,
+                settlementStatus: true,
+                estimatedFare: true
+            }
+        });
+        if (!room) {
+            return res.status(404).json({ message: 'Room not found' });
+        }
+        if (room.creatorId !== userId) {
+            return res.status(403).json({ message: '호스트만 배차 정보를 업데이트할 수 있습니다.' });
+        }
+        const analysis = await (0, dispatchVisionService_1.analyzeDispatchScreenshot)(body.data);
+        const normalizedDriver = normalizePipe(analysis.driverName);
+        const normalizedCarNumber = normalizePipe(analysis.carNumber);
+        const normalizedCarModel = normalizePipe(analysis.carModel);
+        const currentRideState = await prisma_1.prisma.roomRideState.findUnique({
+            where: { roomId: room.id }
+        });
+        const promoteStage = !currentRideState || PROMOTABLE_STAGES.has(currentRideState.stage ?? client_1.RoomRideStage.idle);
+        const stageToApply = promoteStage
+            ? client_1.RoomRideStage.driver_assigned
+            : currentRideState?.stage ?? client_1.RoomRideStage.idle;
+        const nextDriverName = normalizedDriver ?? currentRideState?.driverName ?? null;
+        const nextCarNumber = normalizedCarNumber ?? currentRideState?.carNumber ?? null;
+        const nextCarModel = normalizedCarModel ?? currentRideState?.carModel ?? null;
+        const rideState = await prisma_1.prisma.roomRideState.upsert({
+            where: { roomId: room.id },
+            create: {
+                roomId: room.id,
+                stage: stageToApply,
+                driverName: nextDriverName,
+                carNumber: nextCarNumber,
+                carModel: nextCarModel,
+                updatedById: userId
+            },
+            update: {
+                ...(promoteStage ? { stage: stageToApply } : {}),
+                driverName: nextDriverName,
+                carNumber: nextCarNumber,
+                carModel: nextCarModel,
+                updatedById: userId
+            }
+        });
+        if (room.status !== client_1.RoomStatus.dispatching) {
+            await prisma_1.prisma.room.update({ where: { id: room.id }, data: { status: client_1.RoomStatus.dispatching } });
+        }
+        let settlementHold = null;
+        let settlementHoldError = null;
+        const settlementSnapshot = await prisma_1.prisma.room.findUnique({
+            where: { id: room.id },
+            select: { settlementStatus: true, estimatedFare: true }
+        });
+        if (settlementSnapshot?.settlementStatus === 'pending' &&
+            settlementSnapshot.estimatedFare != null) {
+            try {
+                settlementHold = await (0, service_1.holdEstimatedFare)(room.id);
+            }
+            catch (error) {
+                settlementHoldError = interpretSettlementError(error);
+            }
+        }
+        const updatedRoom = await (0, room_controller_1.loadRoomOrThrow)(room.id);
+        (0, room_controller_1.broadcastRoom)(updatedRoom, userId);
+        return res.json({
+            analysis,
+            driver: {
+                name: rideState.driverName,
+                carModel: rideState.carModel,
+                carNumber: rideState.carNumber
+            },
+            rideState: (0, room_controller_1.serializeRideState)(rideState),
+            room: (0, room_controller_1.serializeRoom)(updatedRoom, userId),
+            settlementHold,
+            settlementHoldError
+        });
+    }
+    catch (error) {
+        if (error?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
+            return res.status(500).json({ message: 'Gemini API key is not configured.' });
+        }
+        const isGeminiUnavailable = typeof error?.message === 'string' &&
+            (error.message.includes('GEMINI_FETCH_FAILED') ||
+                error.message.includes('GEMINI_REQUEST_FAILED'));
+        if (isGeminiUnavailable) {
+            return res
+                .status(502)
+                .json({ message: 'Gemini Vision 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+        }
+        console.error('analyzeDispatchInfo error', error);
+        return res.status(500).json({ message: 'Failed to analyze dispatch screenshot' });
+    }
+}
+function interpretSettlementError(error) {
+    const code = typeof error?.message === 'string' ? error.message : 'UNKNOWN';
+    switch (code) {
+        case 'ROOM_NOT_FOUND':
+            return { code, message: '방을 찾을 수 없어 정산을 진행하지 못했습니다.' };
+        case 'ESTIMATED_FARE_MISSING':
+            return { code, message: '예상 요금이 설정되어 있지 않아 예치금을 잡을 수 없습니다.' };
+        case 'INSUFFICIENT_BALANCE':
+            return { code, message: '일부 참여자의 잔액이 부족해 자동 결제가 실패했습니다.' };
+        default:
+            return { code, message: '자동 예치금 결제 중 오류가 발생했습니다.' };
     }
 }

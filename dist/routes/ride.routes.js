@@ -9,4 +9,5 @@ router.get('/rides/uber/deeplink', auth_1.requireAuth, ride_controller_1.createU
 router.get('/rooms/:id/ride-state', auth_1.requireAuth, ride_controller_1.getRoomRideState);
 router.post('/rooms/:id/ride/request', auth_1.requireAuth, ride_controller_1.requestRoomUberRide);
 router.post('/rooms/:id/ride/stage', auth_1.requireAuth, ride_controller_1.updateRideStage);
+router.post('/rooms/:id/ride/dispatch-info', auth_1.requireAuth, ride_controller_1.analyzeDispatchInfo);
 exports.default = router;
